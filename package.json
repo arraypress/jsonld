@@ -1,0 +1,25 @@
+{
+  "name": "@arraypress/jsonld",
+  "version": "1.0.0",
+  "description": "JSON-LD structured data builders for SEO. Product, Article, Organization, WebSite, Breadcrumb, FAQ, HowTo, and more.",
+  "type": "module",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "types": "./src/index.d.ts"
+    }
+  },
+  "files": ["src"],
+  "scripts": {
+    "test": "node --test tests/jsonld.test.js"
+  },
+  "keywords": ["json-ld", "structured-data", "schema-org", "seo", "rich-snippets", "product", "article", "breadcrumb", "faq"],
+  "author": "David Sherlock",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arraypress/jsonld"
+  }
+}
