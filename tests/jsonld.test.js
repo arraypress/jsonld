@@ -18,6 +18,15 @@ describe('product', () => {
     assert.equal(ld.aggregateRating.ratingValue, 4.5);
     assert.equal(ld.aggregateRating.reviewCount, 100);
   });
+  it('offerUrl points the Offer at a separate buy link', () => {
+    const ld = product({ name: 'X', url: 'https://x.com/p', offerUrl: 'https://buy.example.com/p', price: 29, currency: 'gbp' });
+    assert.equal(ld.url, 'https://x.com/p');
+    assert.equal(ld.offers.url, 'https://buy.example.com/p');
+  });
+  it('Offer falls back to the product url when offerUrl is omitted', () => {
+    const ld = product({ name: 'X', url: 'https://x.com/p', price: 29, currency: 'gbp' });
+    assert.equal(ld.offers.url, 'https://x.com/p');
+  });
 });
 
 describe('article', () => {

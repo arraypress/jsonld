@@ -1,6 +1,6 @@
 {
   "name": "@arraypress/jsonld",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "JSON-LD structured data builders for SEO — Product, Article, BlogPosting, NewsArticle, Person, Organization, WebSite, WebPage, ProfilePage, Breadcrumb, FAQ, HowTo, Event, JobPosting, LocalBusiness, SoftwareApplication, Course, Recipe, VideoObject, ImageObject, Service, Review, AggregateRating, Offer, CollectionPage. Each with an extra passthrough.",
   "type": "module",
   "main": "src/index.js",

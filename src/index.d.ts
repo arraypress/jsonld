@@ -14,7 +14,7 @@ export interface ReviewOptions extends Extra { rating: number; author?: Node; bo
 export interface AggregateRatingOptions extends Extra { rating: number; reviewCount: number; bestRating?: number; }
 export interface OfferOptions extends Extra { price?: number | string; currency?: string; url?: string; availability?: string; priceValidUntil?: string; }
 export interface ProductOptions extends Extra {
-  name: string; url: string; description?: string; image?: string | string[]; sku?: string; brand?: Node;
+  name: string; url: string; offerUrl?: string; description?: string; image?: string | string[]; sku?: string; brand?: Node;
   price?: number | string; currency?: string; availability?: string; priceValidUntil?: string;
   rating?: number; reviewCount?: number;
   reviews?: Array<{ rating: number; author?: Node; body?: string; datePublished?: string }>;

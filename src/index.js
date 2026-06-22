@@ -70,6 +70,7 @@ function reviewNode({ rating, author, body, datePublished, bestRating = 5 }) {
  * @param {Object} options - Product data.
  * @param {string} options.name - Product name.
  * @param {string} options.url - Product page URL.
+ * @param {string} [options.offerUrl] - URL where the product can be purchased (the Offer's `url`). Defaults to `url` when omitted — set this to an external checkout/buy link.
  * @param {string} [options.description] - Product description.
  * @param {string|string[]} [options.image] - Product image URL(s).
  * @param {string} [options.sku] - Product SKU.
@@ -94,13 +95,13 @@ function reviewNode({ rating, author, body, datePublished, bestRating = 5 }) {
  *   reviews: [{ rating: 5, author: 'Jane', body: 'Gorgeous.' }],
  * });
  */
-export function product({ name, url, description, image, sku, brand, price, currency, availability, priceValidUntil, rating, reviewCount, reviews, additionalProperty, extra }) {
+export function product({ name, url, offerUrl, description, image, sku, brand, price, currency, availability, priceValidUntil, rating, reviewCount, reviews, additionalProperty, extra }) {
   const ld = { '@context': CONTEXT, '@type': 'Product', name, url };
   if (description) ld.description = description;
   if (image) ld.image = image;
   if (sku) ld.sku = sku;
   if (brand) ld.brand = typeof brand === 'string' ? { '@type': 'Organization', name: brand } : brand;
-  if (price !== undefined && currency) ld.offers = offerNode({ price, currency, url, availability, priceValidUntil });
+  if (price !== undefined && currency) ld.offers = offerNode({ price, currency, url: offerUrl || url, availability, priceValidUntil });
   if (rating && reviewCount) ld.aggregateRating = aggregateRatingNode({ rating, reviewCount });
   if (additionalProperty && additionalProperty.length) {
     ld.additionalProperty = additionalProperty.map((p) => ({ '@type': 'PropertyValue', name: p.name, value: p.value }));
