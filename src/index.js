@@ -253,8 +253,10 @@ export function videoObject({ name, description, thumbnailUrl, uploadDate, conte
  */
 export function imageObject({ url, width, height, caption, extra }) {
   const ld = { '@context': CONTEXT, '@type': 'ImageObject', url };
-  if (width) ld.width = width;
-  if (height) ld.height = height;
+  // Schema.org types width/height as Distance/QuantitativeValue (not a bare
+  // number), so wrap pixel dimensions as a QuantitativeValue.
+  if (width) ld.width = { '@type': 'QuantitativeValue', value: width };
+  if (height) ld.height = { '@type': 'QuantitativeValue', value: height };
   if (caption) ld.caption = caption;
   return withExtra(ld, extra);
 }

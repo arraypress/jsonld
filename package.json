@@ -15,7 +15,8 @@
     "src"
   ],
   "scripts": {
-    "test": "node --test tests/jsonld.test.js"
+    "test": "node --test tests/jsonld.test.js && tsc --noEmit",
+    "validate": "tsc --noEmit"
   },
   "keywords": [
     "json-ld",
@@ -33,5 +34,9 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/arraypress/jsonld"
+  },
+  "devDependencies": {
+    "schema-dts": "^2.0.0",
+    "typescript": "^6.0.3"
   }
 }

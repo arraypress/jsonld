@@ -173,7 +173,7 @@ describe('v1.1.0 — new types + passthrough', () => {
     assert.equal(offer({ price: 9, currency: 'usd' }).priceCurrency, 'USD');
     assert.equal(review({ rating: 5, author: 'Bob' }).reviewRating.ratingValue, 5);
     assert.equal(aggregateRating({ rating: 4.5, reviewCount: 10 }).ratingValue, 4.5);
-    assert.equal(imageObject({ url: 'i', width: 1200 }).width, 1200);
+    assert.equal(imageObject({ url: 'i', width: 1200 }).width.value, 1200);
     assert.equal(videoObject({ name: 'V', description: 'd', thumbnailUrl: 't', uploadDate: '2026-01-01' })['@type'], 'VideoObject');
     assert.equal(recipe({ name: 'R', ingredients: ['x'], instructions: ['mix'] }).recipeInstructions[0]['@type'], 'HowToStep');
   });
