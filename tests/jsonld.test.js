@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { product, article, blogPosting, organization, webSite, breadcrumb, faq, howTo, event, localBusiness, softwareApplication, collectionPage } from '../src/index.js';
+import { product, article, blogPosting, organization, webSite, breadcrumb, faq, howTo, event, localBusiness, softwareApplication, collectionPage, person, jobPosting, newsArticle, webPage, profilePage, review, aggregateRating, offer, imageObject, videoObject, recipe, course, service } from '../src/index.js';
 
 describe('product', () => {
   it('builds product schema', () => {
@@ -132,5 +132,63 @@ describe('collectionPage', () => {
     const ld = collectionPage({ name: 'Products', url: 'https://example.com/products', description: 'All products', provider: 'My Store' });
     assert.equal(ld['@type'], 'CollectionPage');
     assert.equal(ld.provider['@type'], 'Organization');
+  });
+});
+
+describe('v1.1.0 — new types + passthrough', () => {
+  it('person', () => {
+    const ld = person({ name: 'Jane Doe', url: 'https://jane.dev', jobTitle: 'Designer', sameAs: ['https://x.com/jane'] });
+    assert.equal(ld['@type'], 'Person');
+    assert.equal(ld.jobTitle, 'Designer');
+    assert.deepEqual(ld.sameAs, ['https://x.com/jane']);
+  });
+
+  it('jobPosting with org + location + remote + salary', () => {
+    const ld = jobPosting({ title: 'Engineer', description: 'd', datePosted: '2026-06-01', hiringOrganization: 'Acme', jobLocation: 'Remote', employmentType: 'FULL_TIME', remote: true, salary: 120000, currency: 'usd' });
+    assert.equal(ld['@type'], 'JobPosting');
+    assert.equal(ld.hiringOrganization['@type'], 'Organization');
+    assert.equal(ld.jobLocation['@type'], 'Place');
+    assert.equal(ld.jobLocationType, 'TELECOMMUTE');
+    assert.equal(ld.baseSalary.currency, 'USD');
+    assert.equal(ld.baseSalary.value.value, '120000');
+  });
+
+  it('newsArticle is an Article variant', () => {
+    assert.equal(newsArticle({ headline: 'X', url: 'https://x.com' })['@type'], 'NewsArticle');
+  });
+
+  it('article supports section + keywords', () => {
+    const ld = article({ headline: 'X', url: 'https://x.com', section: 'Tech', keywords: ['a', 'b'] });
+    assert.equal(ld.articleSection, 'Tech');
+    assert.equal(ld.keywords, 'a, b');
+  });
+
+  it('webPage / profilePage / course / service / offer / review / aggregateRating / imageObject / videoObject / recipe', () => {
+    assert.equal(webPage({ name: 'P', url: 'u' })['@type'], 'WebPage');
+    const pp = profilePage({ mainEntity: { name: 'Jane' }, url: 'u' });
+    assert.equal(pp['@type'], 'ProfilePage');
+    assert.equal(pp.mainEntity['@type'], 'Person');
+    assert.equal(course({ name: 'C', description: 'd', provider: 'Acme' }).provider['@type'], 'Organization');
+    assert.equal(service({ name: 'S' })['@type'], 'Service');
+    assert.equal(offer({ price: 9, currency: 'usd' }).priceCurrency, 'USD');
+    assert.equal(review({ rating: 5, author: 'Bob' }).reviewRating.ratingValue, 5);
+    assert.equal(aggregateRating({ rating: 4.5, reviewCount: 10 }).ratingValue, 4.5);
+    assert.equal(imageObject({ url: 'i', width: 1200 }).width, 1200);
+    assert.equal(videoObject({ name: 'V', description: 'd', thumbnailUrl: 't', uploadDate: '2026-01-01' })['@type'], 'VideoObject');
+    assert.equal(recipe({ name: 'R', ingredients: ['x'], instructions: ['mix'] }).recipeInstructions[0]['@type'], 'HowToStep');
+  });
+
+  it('enriched product: reviews + additionalProperty', () => {
+    const ld = product({ name: 'P', url: 'u', reviews: [{ rating: 5, author: 'Jane', body: 'Great' }], additionalProperty: [{ name: 'Format', value: 'WAV' }] });
+    assert.equal(ld.review[0]['@type'], 'Review');
+    assert.equal(ld.review[0].author.name, 'Jane');
+    assert.equal(ld.additionalProperty[0]['@type'], 'PropertyValue');
+    assert.equal(ld.additionalProperty[0].value, 'WAV');
+  });
+
+  it('extra passthrough is merged last', () => {
+    const ld = person({ name: 'Jane', extra: { inLanguage: 'en', knowsAbout: ['design'] } });
+    assert.equal(ld.inLanguage, 'en');
+    assert.deepEqual(ld.knowsAbout, ['design']);
   });
 });

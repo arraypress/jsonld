@@ -1,7 +1,7 @@
 {
   "name": "@arraypress/jsonld",
-  "version": "1.0.0",
-  "description": "JSON-LD structured data builders for SEO. Product, Article, Organization, WebSite, Breadcrumb, FAQ, HowTo, and more.",
+  "version": "1.1.0",
+  "description": "JSON-LD structured data builders for SEO — Product, Article, BlogPosting, NewsArticle, Person, Organization, WebSite, WebPage, ProfilePage, Breadcrumb, FAQ, HowTo, Event, JobPosting, LocalBusiness, SoftwareApplication, Course, Recipe, VideoObject, ImageObject, Service, Review, AggregateRating, Offer, CollectionPage. Each with an extra passthrough.",
   "type": "module",
   "main": "src/index.js",
   "types": "src/index.d.ts",
@@ -11,11 +11,23 @@
       "types": "./src/index.d.ts"
     }
   },
-  "files": ["src"],
+  "files": [
+    "src"
+  ],
   "scripts": {
     "test": "node --test tests/jsonld.test.js"
   },
-  "keywords": ["json-ld", "structured-data", "schema-org", "seo", "rich-snippets", "product", "article", "breadcrumb", "faq"],
+  "keywords": [
+    "json-ld",
+    "structured-data",
+    "schema-org",
+    "seo",
+    "rich-snippets",
+    "product",
+    "article",
+    "breadcrumb",
+    "faq"
+  ],
   "author": "David Sherlock",
   "license": "MIT",
   "repository": {

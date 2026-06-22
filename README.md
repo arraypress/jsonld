@@ -20,20 +20,17 @@ const ld = product({ name: 'Widget', url: 'https://example.com/widget', price: 9
 
 All functions return a plain object with `@context: "https://schema.org"`.
 
-- `product(options)` - Product with offers and ratings
-- `article(options)` - Article schema
-- `blogPosting(options)` - BlogPosting (same options as article)
-- `organization(options)` - Organization schema
-- `webSite(options)` - WebSite with optional search action
-- `breadcrumb(items)` - BreadcrumbList from `{ name, url? }` items
-- `faq(items)` - FAQPage from `{ question, answer }` items
-- `howTo(options)` - HowTo with steps
-- `event(options)` - Event schema
-- `localBusiness(options)` - LocalBusiness with address, geo, ratings
-- `softwareApplication(options)` - SoftwareApplication schema
-- `collectionPage(options)` - CollectionPage schema
+**Commerce** — `product(options)` (offers, ratings, reviews, custom properties), `offer(options)`, `review(options)`, `aggregateRating(options)`
 
-See type definitions in `src/index.d.ts` for full option details.
+**Content** — `article(options)`, `blogPosting(options)`, `newsArticle(options)`, `recipe(options)`, `videoObject(options)`, `imageObject(options)`
+
+**Entities** — `person(options)`, `organization(options)`
+
+**Site structure** — `webSite(options)` (with search action), `webPage(options)`, `profilePage(options)`, `breadcrumb(items)`, `faq(items)`, `howTo(options)`, `collectionPage(options)`
+
+**Local / business / careers / learning** — `event(options)`, `localBusiness(options)`, `jobPosting(options)`, `softwareApplication(options)`, `course(options)`, `service(options)`
+
+Every builder accepts an **`extra`** field (merged last) for any Schema.org property it doesn't model — declare the common 90%, bolt on the long tail. See `src/index.d.ts` for full option details.
 
 ## License
 
