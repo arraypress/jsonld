@@ -64,6 +64,13 @@ export function webPage(options: WebPageOptions): object;
 export interface ProfilePageOptions extends Extra { mainEntity: PersonOptions | object; url?: string; dateCreated?: string; dateModified?: string; }
 export function profilePage(options: ProfilePageOptions): object;
 
+export interface DefinedTermSetRef { name: string; url?: string; }
+export interface DefinedTermOptions extends Extra { name: string; description?: string; url?: string; termCode?: string; inSet?: DefinedTermSetRef; }
+export function definedTerm(options: DefinedTermOptions): object;
+
+export interface QuizOptions extends Extra { name: string; url?: string; description?: string; numberOfQuestions?: number; about?: string; provider?: OrganizationOptions | object; }
+export function quiz(options: QuizOptions): object;
+
 export interface BreadcrumbItem { name: string; url?: string; }
 export function breadcrumb(items: BreadcrumbItem[]): object;
 

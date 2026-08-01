@@ -414,6 +414,49 @@ export function collectionPage({ name, url, description, provider, extra }) {
   return withExtra(ld, extra);
 }
 
+/**
+ * Build a DefinedTerm JSON-LD object — a term inside a controlled vocabulary.
+ *
+ * Use for an entry that is one of a named set: a personality type within a
+ * framework, a tag within a taxonomy, a term within a glossary. `inSet` links
+ * it to the DefinedTermSet so a consumer knows INFJ belongs to "16 Types"
+ * rather than being a free-floating page.
+ *
+ * @param {Object} options - `name`, `description?`, `url?`, `termCode?`, `inSet?` ({name, url?}), `extra?`.
+ * @returns {Object} A JSON-LD DefinedTerm object.
+ */
+export function definedTerm({ name, description, url, termCode, inSet, extra }) {
+  const ld = { '@context': CONTEXT, '@type': 'DefinedTerm', name };
+  if (description) ld.description = description;
+  if (url) ld.url = url;
+  if (termCode) ld.termCode = termCode;
+  if (inSet) {
+    ld.inDefinedTermSet = { '@type': 'DefinedTermSet', name: inSet.name };
+    if (inSet.url) ld.inDefinedTermSet.url = inSet.url;
+  }
+  return withExtra(ld, extra);
+}
+
+/**
+ * Build a Quiz JSON-LD object — an assessment a visitor completes.
+ *
+ * `numberOfQuestions` and `educationalLevel` are optional; `about` names what
+ * the quiz measures. Note schema.org models Quiz as a LearningResource, which
+ * is the closest fit for a self-assessment.
+ *
+ * @param {Object} options - `name`, `url?`, `description?`, `numberOfQuestions?`, `about?`, `provider?`, `extra?`.
+ * @returns {Object} A JSON-LD Quiz object.
+ */
+export function quiz({ name, url, description, numberOfQuestions, about, provider, extra }) {
+  const ld = { '@context': CONTEXT, '@type': 'Quiz', name };
+  if (url) ld.url = url;
+  if (description) ld.description = description;
+  if (numberOfQuestions) ld.numberOfQuestions = numberOfQuestions;
+  if (about) ld.about = { '@type': 'Thing', name: about };
+  if (provider) ld.provider = orgNode(provider);
+  return withExtra(ld, extra);
+}
+
 // ── Local / business / careers / learning ──
 
 /**
