@@ -1,12 +1,17 @@
 /**
  * @arraypress/jsonld
  *
- * JSON-LD structured data builders for SEO — the common Schema.org types used
- * by content, commerce, profile, local, and careers sites: Product, Article,
- * BlogPosting, NewsArticle, Person, Organization, WebSite, WebPage, ProfilePage,
- * Breadcrumb, FAQ, HowTo, Event, JobPosting, LocalBusiness, SoftwareApplication,
- * Course, Recipe, VideoObject, ImageObject, Service, Review, AggregateRating,
- * Offer, and CollectionPage.
+ * JSON-LD structured data builders for SEO — the Schema.org types used by
+ * content, commerce, profile, directory, property, music and careers sites:
+ * Product, Article, BlogPosting, NewsArticle, Person, Organization, WebSite,
+ * WebPage, ProfilePage, Breadcrumb, FAQ, HowTo, Event, JobPosting,
+ * LocalBusiness, SoftwareApplication, Course, Recipe, VideoObject,
+ * ImageObject, Service, Review, AggregateRating, Offer, CollectionPage,
+ * ItemList, Menu, RealEstateListing, Accommodation and the MusicGroup family.
+ *
+ * `localBusiness()`, `organization()`, `event()` and `accommodation()` take a
+ * `type` option covering their whole Schema.org subtype tree, so one directory
+ * codebase serves dentists, restaurants, garages, venues and estate agents.
  *
  * Every builder returns a complete object with `@context`. Each accepts an
  * `extra` escape hatch (merged last) for any Schema.org field it doesn't model,
@@ -39,6 +44,54 @@ const addressNode = (a) =>
   typeof a === 'string'
     ? { '@type': 'PostalAddress', streetAddress: a }
     : { '@type': 'PostalAddress', ...a };
+
+/* Schema.org's DayOfWeek wants full English day names. Directory data rarely
+ * arrives that way, so accept the common abbreviations and normalise. Anything
+ * unrecognised passes through untouched — a caller with a full schema.org URL
+ * (`https://schema.org/Monday`) is already correct and must not be mangled. */
+const DAYS = {
+  mo: 'Monday', mon: 'Monday', monday: 'Monday',
+  tu: 'Tuesday', tue: 'Tuesday', tues: 'Tuesday', tuesday: 'Tuesday',
+  we: 'Wednesday', wed: 'Wednesday', wednesday: 'Wednesday',
+  th: 'Thursday', thu: 'Thursday', thur: 'Thursday', thurs: 'Thursday', thursday: 'Thursday',
+  fr: 'Friday', fri: 'Friday', friday: 'Friday',
+  sa: 'Saturday', sat: 'Saturday', saturday: 'Saturday',
+  su: 'Sunday', sun: 'Sunday', sunday: 'Sunday',
+};
+
+const dayName = (d) => (typeof d === 'string' ? DAYS[d.trim().toLowerCase()] ?? d : d);
+
+/* Build the OpeningHoursSpecification array Google reads for opening-hours
+ * rich results. A closed day is expressed as opens === closes === '00:00',
+ * which is Google's documented convention — omitting the day entirely says
+ * "unknown", not "closed", and those mean different things in a directory. */
+function openingHoursNodes(hours) {
+  const list = Array.isArray(hours) ? hours : [hours];
+  return list.filter(Boolean).map((h) => {
+    const days = h.days ?? h.dayOfWeek;
+    const node = { '@type': 'OpeningHoursSpecification' };
+    if (days) node.dayOfWeek = (Array.isArray(days) ? days : [days]).map(dayName);
+    if (h.closed) {
+      node.opens = '00:00';
+      node.closes = '00:00';
+    } else {
+      if (h.opens) node.opens = h.opens;
+      if (h.closes) node.closes = h.closes;
+    }
+    if (h.validFrom) node.validFrom = h.validFrom;
+    if (h.validThrough) node.validThrough = h.validThrough;
+    return node;
+  });
+}
+
+/* Drop `@context` from a node that's about to be nested inside another. A
+ * repeated @context is legal JSON-LD but noise, and it lets the builders here
+ * compose with each other — pass `localBusiness()` output straight into
+ * `itemList()` and it lands as a clean nested node. */
+const stripContext = (node) => {
+  const { '@context': _ctx, ...rest } = node;
+  return rest;
+};
 
 function offerNode({ price, currency, url, availability, priceValidUntil }) {
   const node = { '@type': 'Offer' };
@@ -300,11 +353,14 @@ export function person({ name, url, image, jobTitle, description, email, worksFo
  * @param {Object} options - `name`, `url`, `logo?`, `description?`, `sameAs?`.
  * @returns {Object} A JSON-LD Organization object.
  */
-export function organization({ name, url, logo, description, sameAs, extra }) {
-  const ld = { '@context': CONTEXT, '@type': 'Organization', name, url };
+export function organization({ name, type = 'Organization', url, logo, description, sameAs, address, phone, email, extra }) {
+  const ld = { '@context': CONTEXT, '@type': type, name, url };
   if (logo) ld.logo = logo;
   if (description) ld.description = description;
   if (sameAs && sameAs.length) ld.sameAs = sameAs;
+  if (address) ld.address = addressNode(address);
+  if (phone) ld.telephone = phone;
+  if (email) ld.email = email;
   return withExtra(ld, extra);
 }
 
@@ -465,31 +521,88 @@ export function quiz({ name, url, description, numberOfQuestions, about, provide
  * @param {Object} options - `name`, `startDate`, `url?`, `endDate?`, `location?`, `description?`, `image?`, `organizer?`.
  * @returns {Object} A JSON-LD Event object.
  */
-export function event({ name, url, startDate, endDate, location, description, image, organizer, extra }) {
-  const ld = { '@context': CONTEXT, '@type': 'Event', name, startDate };
+export function event({ name, type = 'Event', url, startDate, endDate, location, description, image, organizer, performer, price, currency, offerUrl, status, attendanceMode, extra }) {
+  const ld = { '@context': CONTEXT, '@type': type, name, startDate };
   if (url) ld.url = url;
   if (endDate) ld.endDate = endDate;
   if (description) ld.description = description;
   if (image) ld.image = image;
   if (location) ld.location = typeof location === 'string' ? { '@type': 'Place', name: location } : location;
   if (organizer) ld.organizer = orgNode(organizer);
+  /* A gig's performer is a MusicGroup, not an Organization — Google reads it
+   * for the artist's event listings, so a bare string defaults accordingly. */
+  if (performer) {
+    ld.performer = (Array.isArray(performer) ? performer : [performer])
+      .map((p) => (typeof p === 'string' ? { '@type': 'MusicGroup', name: p } : p));
+  }
+  if (price !== undefined) ld.offers = offerNode({ price, currency, url: offerUrl || url });
+  if (status) ld.eventStatus = `${CONTEXT}/${status}`;
+  if (attendanceMode) ld.eventAttendanceMode = `${CONTEXT}/${attendanceMode}`;
   return withExtra(ld, extra);
 }
 
 /**
- * Build a LocalBusiness JSON-LD object.
+ * Build a LocalBusiness JSON-LD object — the workhorse for directory listings.
  *
- * @param {Object} options - `name`, `url?`, `address?`, `phone?`, `image?`, `priceRange?`, `rating?`, `reviewCount?`, `geo?`.
- * @returns {Object} A JSON-LD LocalBusiness object.
+ * `type` narrows the entity to any LocalBusiness subtype, which is what makes
+ * one directory theme serve dentists, restaurants, venues and estate agents
+ * alike. Google treats the subtype as a LocalBusiness for rich results and
+ * uses it to understand the vertical, so a narrower type is always better
+ * than the bare default.
+ *
+ * @param {Object} options - Business data.
+ * @param {string} options.name - Business name.
+ * @param {string} [options.type='LocalBusiness'] - Any LocalBusiness subtype —
+ *   `Dentist`, `Restaurant`, `RealEstateAgent`, `MusicVenue`, `NightClub`,
+ *   `Physician`, `MedicalClinic`, `AutoDealer`, `Store`, `HairSalon`… See
+ *   `LocalBusinessType` in the type definitions for the full list.
+ * @param {string} [options.url] - Canonical URL for the listing.
+ * @param {string|Object} [options.address] - Street string or PostalAddress fields.
+ * @param {string} [options.phone] - Contact telephone.
+ * @param {string|string[]} [options.image] - Image URL(s).
+ * @param {string} [options.priceRange] - e.g. `'££'` or `'$$$'`.
+ * @param {number} [options.rating] - Aggregate rating value.
+ * @param {number} [options.reviewCount] - Number of ratings behind it.
+ * @param {Object} [options.geo] - `{ latitude, longitude }`.
+ * @param {Object|Object[]} [options.openingHours] - One or more
+ *   `{ days, opens, closes }` entries; `{ days, closed: true }` marks a
+ *   closed day. Day names accept `'Mon'`, `'monday'`, `'Monday'`.
+ * @param {string} [options.email] - Contact email.
+ * @param {string[]} [options.servesCuisine] - Restaurants: cuisines served.
+ * @param {string} [options.menu] - Restaurants: URL of the menu.
+ * @param {boolean} [options.acceptsReservations] - Restaurants: takes bookings.
+ * @param {Object} [options.extra] - Extra fields, merged last.
+ * @returns {Object} A JSON-LD LocalBusiness (or subtype) object.
+ *
+ * @example
+ * localBusiness({
+ *   type: 'Dentist',
+ *   name: 'Bristol Smile Clinic',
+ *   address: { streetAddress: '12 Park St', addressLocality: 'Bristol', postalCode: 'BS1 5JA' },
+ *   phone: '+44 117 000 0000',
+ *   openingHours: [
+ *     { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], opens: '09:00', closes: '17:30' },
+ *     { days: 'Sat', opens: '09:00', closes: '13:00' },
+ *     { days: 'Sun', closed: true },
+ *   ],
+ * });
  */
-export function localBusiness({ name, url, address, phone, image, priceRange, rating, reviewCount, geo, extra }) {
-  const ld = { '@context': CONTEXT, '@type': 'LocalBusiness', name };
+export function localBusiness({
+  name, type = 'LocalBusiness', url, address, phone, email, image, priceRange,
+  rating, reviewCount, geo, openingHours, servesCuisine, menu, acceptsReservations, extra,
+}) {
+  const ld = { '@context': CONTEXT, '@type': type, name };
   if (url) ld.url = url;
   if (image) ld.image = image;
   if (phone) ld.telephone = phone;
+  if (email) ld.email = email;
   if (priceRange) ld.priceRange = priceRange;
   if (address) ld.address = addressNode(address);
   if (geo) ld.geo = { '@type': 'GeoCoordinates', ...geo };
+  if (openingHours) ld.openingHoursSpecification = openingHoursNodes(openingHours);
+  if (servesCuisine) ld.servesCuisine = servesCuisine;
+  if (menu) ld.hasMenu = menu;
+  if (acceptsReservations !== undefined) ld.acceptsReservations = acceptsReservations;
   if (rating && reviewCount) ld.aggregateRating = aggregateRatingNode({ rating, reviewCount });
   return withExtra(ld, extra);
 }
@@ -574,5 +687,329 @@ export function service({ name, description, provider, serviceType, areaServed, 
   if (areaServed) ld.areaServed = areaServed;
   if (url) ld.url = url;
   if (provider) ld.provider = orgNode(provider);
+  return withExtra(ld, extra);
+}
+
+/**
+ * Build an ItemList JSON-LD object — directory and archive pages.
+ *
+ * This is what turns "Dentists in Bristol" into a result Google can present
+ * as a carousel rather than a single blue link. Items may be plain URLs, plain
+ * names, or whole nodes built by the other helpers here — a listing page that
+ * already renders `localBusiness()` nodes should pass those straight in.
+ *
+ * @param {Object} options - List data.
+ * @param {Array<string|Object>} options.items - URLs, names, or nested nodes.
+ * @param {string} [options.name] - Name of the list, e.g. 'Dentists in Bristol'.
+ * @param {string} [options.url] - Canonical URL of the listing page.
+ * @param {string} [options.order='ItemListOrderAscending'] - Ordering, or
+ *   `'ItemListUnordered'` when position carries no meaning.
+ * @param {number} [options.startPosition=1] - First position number; pass the
+ *   offset on a paginated archive so page 2 doesn't restart at 1.
+ * @param {number} [options.totalItems] - Total across all pages, when paginated.
+ * @param {Object} [options.extra] - Extra fields, merged last.
+ * @returns {Object} A JSON-LD ItemList object.
+ *
+ * @example
+ * itemList({
+ *   name: 'Dentists in Bristol',
+ *   url: 'https://example.com/bristol/dentists',
+ *   items: [
+ *     'https://example.com/bristol/dentists/smile-clinic',
+ *     'https://example.com/bristol/dentists/park-street-dental',
+ *   ],
+ * });
+ *
+ * @example
+ * // Page 3 of a paginated archive, with full nodes inline.
+ * itemList({ items: businesses.map(localBusiness), startPosition: 41, totalItems: 220 });
+ */
+export function itemList({ items = [], name, url, order = 'ItemListOrderAscending', startPosition = 1, totalItems, extra }) {
+  const ld = { '@context': CONTEXT, '@type': 'ItemList' };
+  if (name) ld.name = name;
+  if (url) ld.url = url;
+  if (order) ld.itemListOrder = order;
+  ld.numberOfItems = totalItems ?? items.length;
+  ld.itemListElement = items.map((item, i) => {
+    const el = { '@type': 'ListItem', position: startPosition + i };
+    if (typeof item !== 'string') {
+      /* A nested node carries its own @type, so hand it over whole and drop the
+       * @context — nesting a second @context is legal but noisy, and Google
+       * reads the outer one. */
+      const { '@context': _ctx, ...node } = item;
+      el.item = node;
+    } else if (/^https?:\/\//i.test(item)) {
+      el.url = item;
+    } else {
+      el.name = item;
+    }
+    return el;
+  });
+  return withExtra(ld, extra);
+}
+
+/**
+ * Build a Menu JSON-LD object — restaurants and cafés.
+ *
+ * @param {Object} options - Menu data.
+ * @param {string} [options.name] - Menu name, e.g. 'Dinner'.
+ * @param {string} [options.url] - URL of the menu page.
+ * @param {Array<Object>} [options.sections] - `menuSection()` options objects.
+ * @param {Array<Object>} [options.items] - `menuItem()` options, for a flat menu.
+ * @param {string} [options.description] - Short description.
+ * @param {Object} [options.extra] - Extra fields, merged last.
+ * @returns {Object} A JSON-LD Menu object.
+ *
+ * @example
+ * menu({
+ *   name: 'Dinner',
+ *   sections: [
+ *     { name: 'Small plates', items: [{ name: 'Padrón peppers', price: 6.5, currency: 'gbp' }] },
+ *   ],
+ * });
+ */
+export function menu({ name, url, sections, items, description, extra }) {
+  const ld = { '@context': CONTEXT, '@type': 'Menu' };
+  if (name) ld.name = name;
+  if (url) ld.url = url;
+  if (description) ld.description = description;
+  if (sections) ld.hasMenuSection = sections.map((s) => stripContext(menuSection(s)));
+  if (items) ld.hasMenuItem = items.map((i) => stripContext(menuItem(i)));
+  return withExtra(ld, extra);
+}
+
+/**
+ * Build a MenuSection JSON-LD object — a named course or group within a menu.
+ *
+ * @param {Object} options - Section data.
+ * @param {string} options.name - Section name, e.g. 'Desserts'.
+ * @param {Array<Object>} [options.items] - `menuItem()` options objects.
+ * @param {string} [options.description] - Short description.
+ * @param {Object} [options.extra] - Extra fields, merged last.
+ * @returns {Object} A JSON-LD MenuSection object.
+ */
+export function menuSection({ name, items, description, extra }) {
+  const ld = { '@context': CONTEXT, '@type': 'MenuSection', name };
+  if (description) ld.description = description;
+  if (items) ld.hasMenuItem = items.map((i) => stripContext(menuItem(i)));
+  return withExtra(ld, extra);
+}
+
+/**
+ * Build a MenuItem JSON-LD object — one dish.
+ *
+ * @param {Object} options - Item data.
+ * @param {string} options.name - Dish name.
+ * @param {string} [options.description] - Description.
+ * @param {number|string} [options.price] - Price value.
+ * @param {string} [options.currency] - ISO 4217 code; required for the price to mean anything.
+ * @param {string[]} [options.suitableForDiet] - e.g. `['VeganDiet', 'GlutenFreeDiet']`,
+ *   with or without the schema.org URL prefix.
+ * @param {number} [options.calories] - Energy content in kcal.
+ * @param {Object} [options.extra] - Extra fields, merged last.
+ * @returns {Object} A JSON-LD MenuItem object.
+ */
+export function menuItem({ name, description, price, currency, suitableForDiet, calories, extra }) {
+  const ld = { '@context': CONTEXT, '@type': 'MenuItem', name };
+  if (description) ld.description = description;
+  if (price !== undefined) ld.offers = offerNode({ price, currency });
+  if (suitableForDiet) {
+    ld.suitableForDiet = (Array.isArray(suitableForDiet) ? suitableForDiet : [suitableForDiet])
+      .map((d) => (d.startsWith('http') ? d : `${CONTEXT}/${d}`));
+  }
+  if (calories) ld.nutrition = { '@type': 'NutritionInformation', calories: `${calories} calories` };
+  return withExtra(ld, extra);
+}
+
+// ── Property ────────────────────────────────
+
+/**
+ * Build a RealEstateListing JSON-LD object — a property for sale or to let.
+ *
+ * The listing is the *advert*; the thing being advertised is an Accommodation
+ * (or Residence) node under `about`. Keeping them separate is what lets a
+ * portal mark up both "this page went live on Tuesday" and "this flat has two
+ * bedrooms" without conflating them.
+ *
+ * @param {Object} options - Listing data.
+ * @param {string} options.name - Listing headline.
+ * @param {string} [options.url] - Listing URL.
+ * @param {string} [options.description] - Full description.
+ * @param {string|string[]} [options.image] - Photograph URL(s).
+ * @param {number|string} [options.price] - Asking price or rent.
+ * @param {string} [options.currency] - ISO 4217 code.
+ * @param {string} [options.datePosted] - ISO 8601 date the listing went live.
+ * @param {string|Object} [options.address] - Street string or PostalAddress fields.
+ * @param {Object} [options.geo] - `{ latitude, longitude }`.
+ * @param {Object} [options.accommodation] - `accommodation()` options for the property itself.
+ * @param {Object|string} [options.agent] - Listing agent name or node.
+ * @param {Object} [options.extra] - Extra fields, merged last.
+ * @returns {Object} A JSON-LD RealEstateListing object.
+ *
+ * @example
+ * realEstateListing({
+ *   name: '2-bed flat, Clifton',
+ *   price: 1450, currency: 'gbp',
+ *   datePosted: '2026-08-01',
+ *   address: { addressLocality: 'Bristol', postalCode: 'BS8 1AA' },
+ *   accommodation: { type: 'Apartment', numberOfBedrooms: 2, numberOfBathroomsTotal: 1, floorSize: 68 },
+ * });
+ */
+export function realEstateListing({ name, url, description, image, price, currency, datePosted, address, geo, accommodation: acc, agent, extra }) {
+  const ld = { '@context': CONTEXT, '@type': 'RealEstateListing', name };
+  if (url) ld.url = url;
+  if (description) ld.description = description;
+  if (image) ld.image = image;
+  if (datePosted) ld.datePosted = datePosted;
+  if (price !== undefined) ld.offers = offerNode({ price, currency, url });
+  if (agent) ld.provider = typeof agent === 'string' ? { '@type': 'RealEstateAgent', name: agent } : agent;
+  /* RealEstateListing descends from WebPage — it is the advert, not the place,
+   * so it has no `address` or `geo` of its own. Callers naturally pass them at
+   * the top level anyway, so fold them into the Accommodation (a Place, which
+   * does have them). Validated against schema-dts, which rejects the flat form. */
+  if (acc || address || geo) {
+    ld.about = stripContext(accommodation({ ...(acc ?? {}), address: acc?.address ?? address, geo: acc?.geo ?? geo }));
+  }
+  return withExtra(ld, extra);
+}
+
+/**
+ * Build an Accommodation JSON-LD object — the dwelling itself.
+ *
+ * @param {Object} options - Property data.
+ * @param {string} [options.type='Accommodation'] - `Apartment`, `House`,
+ *   `SingleFamilyResidence`, `Room`, `Suite`, `CampingPitch` or `Accommodation`.
+ * @param {string} [options.name] - Property name.
+ * @param {number} [options.numberOfBedrooms] - Bedroom count.
+ * @param {number} [options.numberOfBathroomsTotal] - Bathroom count.
+ * @param {number} [options.numberOfRooms] - Total rooms.
+ * @param {number} [options.floorSize] - Floor area value.
+ * @param {string} [options.floorSizeUnit='MTK'] - UN/CEFACT code — `MTK` m², `FTK` ft².
+ * @param {string|Object} [options.address] - Street string or PostalAddress fields.
+ * @param {string[]} [options.amenities] - Amenity names, e.g. `['Parking', 'Garden']`.
+ * @param {number} [options.yearBuilt] - Year of construction.
+ * @param {Object} [options.extra] - Extra fields, merged last.
+ * @returns {Object} A JSON-LD Accommodation (or subtype) object.
+ */
+export function accommodation({ type = 'Accommodation', name, numberOfBedrooms, numberOfBathroomsTotal, numberOfRooms, floorSize, floorSizeUnit = 'MTK', address, geo, amenities, yearBuilt, extra }) {
+  const ld = { '@context': CONTEXT, '@type': type };
+  if (name) ld.name = name;
+  if (numberOfBedrooms !== undefined) ld.numberOfBedrooms = numberOfBedrooms;
+  if (numberOfBathroomsTotal !== undefined) ld.numberOfBathroomsTotal = numberOfBathroomsTotal;
+  if (numberOfRooms !== undefined) ld.numberOfRooms = numberOfRooms;
+  if (floorSize !== undefined) {
+    ld.floorSize = { '@type': 'QuantitativeValue', value: floorSize, unitCode: floorSizeUnit };
+  }
+  if (address) ld.address = addressNode(address);
+  if (geo) ld.geo = { '@type': 'GeoCoordinates', ...geo };
+  if (yearBuilt) ld.yearBuilt = yearBuilt;
+  if (amenities) {
+    ld.amenityFeature = (Array.isArray(amenities) ? amenities : [amenities]).map((a) =>
+      typeof a === 'string'
+        ? { '@type': 'LocationFeatureSpecification', name: a, value: true }
+        : { '@type': 'LocationFeatureSpecification', ...a });
+  }
+  return withExtra(ld, extra);
+}
+
+// ── Music ───────────────────────────────────
+
+/**
+ * Build a MusicGroup JSON-LD object — band, artist, DJ or producer.
+ *
+ * Schema.org has no separate "DJ" type: a solo artist performing under an alias
+ * is still a MusicGroup, which is what Google's knowledge panel reads. Use
+ * `person()` only when marking up the human behind the alias.
+ *
+ * @param {Object} options - Artist data.
+ * @param {string} options.name - Artist or band name.
+ * @param {string} [options.url] - Official page.
+ * @param {string|string[]} [options.image] - Press shot URL(s).
+ * @param {string} [options.description] - Bio.
+ * @param {string} [options.genre] - Musical genre.
+ * @param {string[]} [options.sameAs] - Profile URLs — Spotify, Bandcamp, SoundCloud, Discogs.
+ * @param {Array<string|Object>} [options.members] - Band members (Person nodes or names).
+ * @param {string} [options.foundingDate] - ISO 8601 date formed.
+ * @param {string} [options.foundingLocation] - Where they formed.
+ * @param {Array<Object>} [options.albums] - `musicAlbum()` options objects.
+ * @param {Object} [options.extra] - Extra fields, merged last.
+ * @returns {Object} A JSON-LD MusicGroup object.
+ *
+ * @example
+ * musicGroup({
+ *   name: 'Spindrift',
+ *   genre: 'Ambient',
+ *   sameAs: ['https://open.spotify.com/artist/…', 'https://spindrift.bandcamp.com'],
+ * });
+ */
+export function musicGroup({ name, url, image, description, genre, sameAs, members, foundingDate, foundingLocation, albums, extra }) {
+  const ld = { '@context': CONTEXT, '@type': 'MusicGroup', name };
+  if (url) ld.url = url;
+  if (image) ld.image = image;
+  if (description) ld.description = description;
+  if (genre) ld.genre = genre;
+  if (sameAs) ld.sameAs = sameAs;
+  if (members) ld.member = (Array.isArray(members) ? members : [members]).map(personNode);
+  if (foundingDate) ld.foundingDate = foundingDate;
+  if (foundingLocation) ld.foundingLocation = typeof foundingLocation === 'string'
+    ? { '@type': 'Place', name: foundingLocation } : foundingLocation;
+  if (albums) ld.album = albums.map((a) => stripContext(musicAlbum(a)));
+  return withExtra(ld, extra);
+}
+
+/**
+ * Build a MusicAlbum JSON-LD object — a release.
+ *
+ * @param {Object} options - Album data.
+ * @param {string} options.name - Album title.
+ * @param {string|Object} [options.artist] - Artist name or MusicGroup node.
+ * @param {string} [options.url] - Release page.
+ * @param {string|string[]} [options.image] - Artwork URL(s).
+ * @param {string} [options.releaseDate] - ISO 8601 release date.
+ * @param {string} [options.genre] - Genre.
+ * @param {number} [options.numTracks] - Track count.
+ * @param {Array<Object>} [options.tracks] - `musicRecording()` options objects.
+ * @param {string} [options.albumProductionType] - e.g. `StudioAlbum`, `CompilationAlbum`, `LiveAlbum`.
+ * @param {number|string} [options.price] - Price, when it's for sale.
+ * @param {string} [options.currency] - ISO 4217 code.
+ * @param {Object} [options.extra] - Extra fields, merged last.
+ * @returns {Object} A JSON-LD MusicAlbum object.
+ */
+export function musicAlbum({ name, artist, url, image, releaseDate, genre, numTracks, tracks, albumProductionType, price, currency, extra }) {
+  const ld = { '@context': CONTEXT, '@type': 'MusicAlbum', name };
+  if (artist) ld.byArtist = typeof artist === 'string' ? { '@type': 'MusicGroup', name: artist } : artist;
+  if (url) ld.url = url;
+  if (image) ld.image = image;
+  if (releaseDate) ld.datePublished = releaseDate;
+  if (genre) ld.genre = genre;
+  if (numTracks !== undefined) ld.numTracks = numTracks;
+  if (albumProductionType) ld.albumProductionType = `${CONTEXT}/${albumProductionType}`;
+  if (tracks) ld.track = tracks.map((t) => stripContext(musicRecording(t)));
+  if (price !== undefined) ld.offers = offerNode({ price, currency, url });
+  return withExtra(ld, extra);
+}
+
+/**
+ * Build a MusicRecording JSON-LD object — a single track.
+ *
+ * @param {Object} options - Track data.
+ * @param {string} options.name - Track title.
+ * @param {string|Object} [options.artist] - Artist name or MusicGroup node.
+ * @param {string} [options.url] - Track page.
+ * @param {string} [options.duration] - ISO 8601 duration, e.g. `'PT4M33S'`.
+ * @param {string|Object} [options.album] - Album title or MusicAlbum node.
+ * @param {string} [options.audio] - Audio file URL.
+ * @param {string} [options.isrc] - ISRC code.
+ * @param {Object} [options.extra] - Extra fields, merged last.
+ * @returns {Object} A JSON-LD MusicRecording object.
+ */
+export function musicRecording({ name, artist, url, duration, album, audio, isrc, extra }) {
+  const ld = { '@context': CONTEXT, '@type': 'MusicRecording', name };
+  if (artist) ld.byArtist = typeof artist === 'string' ? { '@type': 'MusicGroup', name: artist } : artist;
+  if (url) ld.url = url;
+  if (duration) ld.duration = duration;
+  if (album) ld.inAlbum = typeof album === 'string' ? { '@type': 'MusicAlbum', name: album } : album;
+  if (audio) ld.audio = { '@type': 'AudioObject', contentUrl: audio };
+  if (isrc) ld.isrcCode = isrc;
   return withExtra(ld, extra);
 }

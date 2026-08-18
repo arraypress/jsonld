@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { product, article, blogPosting, organization, webSite, breadcrumb, faq, howTo, event, localBusiness, softwareApplication, collectionPage, person, jobPosting, newsArticle, webPage, profilePage, review, aggregateRating, offer, imageObject, videoObject, recipe, course, service } from '../src/index.js';
+import { product, article, blogPosting, organization, webSite, breadcrumb, faq, howTo, event, localBusiness, softwareApplication, collectionPage, person, jobPosting, newsArticle, webPage, profilePage, review, aggregateRating, offer, imageObject, videoObject, recipe, course, service, itemList, menu, menuSection, menuItem, realEstateListing, accommodation, musicGroup, musicAlbum, musicRecording } from '../src/index.js';
 
 describe('product', () => {
   it('builds product schema', () => {
@@ -199,5 +199,240 @@ describe('v1.1.0 — new types + passthrough', () => {
     const ld = person({ name: 'Jane', extra: { inLanguage: 'en', knowsAbout: ['design'] } });
     assert.equal(ld.inLanguage, 'en');
     assert.deepEqual(ld.knowsAbout, ['design']);
+  });
+});
+
+/* ── Directory / sector builders ─────────────────────────────────────────────
+ *
+ * These assert Google's documented requirements, which are stricter than
+ * Schema.org's. Schema.org marks nearly everything optional; Google silently
+ * drops a rich result when a required property is missing, so "it validates"
+ * is not the bar — "Google will render it" is.
+ */
+
+describe('localBusiness — sector subtypes', () => {
+  it('defaults to LocalBusiness', () => {
+    assert.equal(localBusiness({ name: 'X' })['@type'], 'LocalBusiness');
+  });
+  it('narrows to a sector subtype', () => {
+    assert.equal(localBusiness({ name: 'X', type: 'Dentist' })['@type'], 'Dentist');
+    assert.equal(localBusiness({ name: 'X', type: 'Restaurant' })['@type'], 'Restaurant');
+    assert.equal(localBusiness({ name: 'X', type: 'AutoRepair' })['@type'], 'AutoRepair');
+    assert.equal(localBusiness({ name: 'X', type: 'RealEstateAgent' })['@type'], 'RealEstateAgent');
+    assert.equal(localBusiness({ name: 'X', type: 'MusicVenue' })['@type'], 'MusicVenue');
+  });
+  /* Google requires name; address is required for the local-business rich result
+   * to place the entity at all. */
+  it('keeps name and address, which Google requires', () => {
+    const ld = localBusiness({ name: 'Smile', address: { streetAddress: '1 High St', addressLocality: 'Bristol' } });
+    assert.equal(ld.name, 'Smile');
+    assert.equal(ld.address['@type'], 'PostalAddress');
+    assert.equal(ld.address.addressLocality, 'Bristol');
+  });
+});
+
+describe('localBusiness — opening hours', () => {
+  it('emits OpeningHoursSpecification', () => {
+    const ld = localBusiness({ name: 'X', openingHours: { days: 'Monday', opens: '09:00', closes: '17:00' } });
+    const [h] = ld.openingHoursSpecification;
+    assert.equal(h['@type'], 'OpeningHoursSpecification');
+    assert.deepEqual(h.dayOfWeek, ['Monday']);
+    assert.equal(h.opens, '09:00');
+    assert.equal(h.closes, '17:00');
+  });
+  it('normalises day abbreviations to schema.org names', () => {
+    const ld = localBusiness({ name: 'X', openingHours: { days: ['mon', 'Tue', 'WED', 'thurs', 'fr', 'sa', 'su'] } });
+    assert.deepEqual(ld.openingHoursSpecification[0].dayOfWeek,
+      ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']);
+  });
+  it('passes through a full schema.org day URL untouched', () => {
+    const ld = localBusiness({ name: 'X', openingHours: { days: 'https://schema.org/Monday' } });
+    assert.deepEqual(ld.openingHoursSpecification[0].dayOfWeek, ['https://schema.org/Monday']);
+  });
+  /* Google's convention: a closed day is 00:00–00:00. Omitting the day means
+   * "unknown", which is a different claim. */
+  it('marks a closed day as 00:00-00:00', () => {
+    const ld = localBusiness({ name: 'X', openingHours: { days: 'Sunday', closed: true } });
+    const [h] = ld.openingHoursSpecification;
+    assert.equal(h.opens, '00:00');
+    assert.equal(h.closes, '00:00');
+  });
+  it('accepts several entries', () => {
+    const ld = localBusiness({ name: 'X', openingHours: [
+      { days: ['Mon', 'Tue'], opens: '09:00', closes: '17:00' },
+      { days: 'Sat', opens: '10:00', closes: '14:00' },
+    ] });
+    assert.equal(ld.openingHoursSpecification.length, 2);
+  });
+});
+
+describe('localBusiness — restaurant fields', () => {
+  it('carries cuisine, menu and reservations', () => {
+    const ld = localBusiness({
+      name: 'Trattoria', type: 'Restaurant',
+      servesCuisine: ['Italian'], menu: 'https://x.com/menu', acceptsReservations: true,
+    });
+    assert.deepEqual(ld.servesCuisine, ['Italian']);
+    assert.equal(ld.hasMenu, 'https://x.com/menu');
+    assert.equal(ld.acceptsReservations, true);
+  });
+  it('keeps acceptsReservations:false rather than dropping it', () => {
+    const ld = localBusiness({ name: 'X', acceptsReservations: false });
+    assert.equal(ld.acceptsReservations, false);
+  });
+});
+
+describe('itemList', () => {
+  it('numbers positions from 1', () => {
+    const ld = itemList({ items: ['https://x.com/a', 'https://x.com/b'] });
+    assert.equal(ld['@type'], 'ItemList');
+    assert.equal(ld.numberOfItems, 2);
+    assert.equal(ld.itemListElement[0].position, 1);
+    assert.equal(ld.itemListElement[1].position, 2);
+  });
+  it('treats URLs as url and bare strings as name', () => {
+    const ld = itemList({ items: ['https://x.com/a', 'Plain Name'] });
+    assert.equal(ld.itemListElement[0].url, 'https://x.com/a');
+    assert.equal(ld.itemListElement[1].name, 'Plain Name');
+  });
+  it('nests full nodes and strips their @context', () => {
+    const ld = itemList({ items: [localBusiness({ name: 'B', type: 'Dentist' })] });
+    const { item } = ld.itemListElement[0];
+    assert.equal(item['@type'], 'Dentist');
+    assert.ok(!('@context' in item), 'nested node must not repeat @context');
+  });
+  /* Page 3 of an archive must not restart numbering, or Google reads it as a
+   * competing list of the same items. */
+  it('honours startPosition and totalItems for pagination', () => {
+    const ld = itemList({ items: ['a', 'b'], startPosition: 41, totalItems: 220 });
+    assert.equal(ld.itemListElement[0].position, 41);
+    assert.equal(ld.numberOfItems, 220);
+  });
+});
+
+describe('menu', () => {
+  it('builds sections with items and prices', () => {
+    const ld = menu({ name: 'Dinner', sections: [
+      { name: 'Small plates', items: [{ name: 'Padrón peppers', price: 6.5, currency: 'gbp' }] },
+    ] });
+    assert.equal(ld['@type'], 'Menu');
+    const section = ld.hasMenuSection[0];
+    assert.equal(section['@type'], 'MenuSection');
+    assert.ok(!('@context' in section));
+    const item = section.hasMenuItem[0];
+    assert.equal(item['@type'], 'MenuItem');
+    assert.equal(item.offers.price, '6.5');
+    assert.equal(item.offers.priceCurrency, 'GBP');
+  });
+  it('supports a flat menu with no sections', () => {
+    const ld = menu({ items: [{ name: 'Coffee', price: 3, currency: 'gbp' }] });
+    assert.equal(ld.hasMenuItem[0].name, 'Coffee');
+  });
+  it('expands diets to schema.org URLs', () => {
+    const ld = menuItem({ name: 'Salad', suitableForDiet: ['VeganDiet'] });
+    assert.deepEqual(ld.suitableForDiet, ['https://schema.org/VeganDiet']);
+  });
+  it('leaves an already-qualified diet URL alone', () => {
+    const ld = menuItem({ name: 'Salad', suitableForDiet: ['https://schema.org/VeganDiet'] });
+    assert.deepEqual(ld.suitableForDiet, ['https://schema.org/VeganDiet']);
+  });
+});
+
+describe('realEstateListing', () => {
+  it('separates the advert from the dwelling', () => {
+    const ld = realEstateListing({
+      name: '2-bed flat', price: 1450, currency: 'gbp', datePosted: '2026-08-01',
+      accommodation: { type: 'Apartment', numberOfBedrooms: 2, floorSize: 68 },
+    });
+    assert.equal(ld['@type'], 'RealEstateListing');
+    assert.equal(ld.datePosted, '2026-08-01');
+    assert.equal(ld.offers.price, '1450');
+    assert.equal(ld.about['@type'], 'Apartment');
+    assert.equal(ld.about.numberOfBedrooms, 2);
+    assert.ok(!('@context' in ld.about));
+  });
+  it('expresses floor size as a QuantitativeValue with a unit code', () => {
+    const ld = accommodation({ floorSize: 68 });
+    assert.equal(ld.floorSize['@type'], 'QuantitativeValue');
+    assert.equal(ld.floorSize.value, 68);
+    assert.equal(ld.floorSize.unitCode, 'MTK');
+    assert.equal(accommodation({ floorSize: 700, floorSizeUnit: 'FTK' }).floorSize.unitCode, 'FTK');
+  });
+  it('maps amenities to LocationFeatureSpecification', () => {
+    const ld = accommodation({ amenities: ['Parking', 'Garden'] });
+    assert.equal(ld.amenityFeature[0]['@type'], 'LocationFeatureSpecification');
+    assert.equal(ld.amenityFeature[0].name, 'Parking');
+    assert.equal(ld.amenityFeature[0].value, true);
+  });
+  it('defaults the agent to a RealEstateAgent', () => {
+    assert.equal(realEstateListing({ name: 'X', agent: 'Acme Lettings' }).provider['@type'], 'RealEstateAgent');
+  });
+});
+
+describe('music', () => {
+  it('builds a MusicGroup for a band, artist or DJ', () => {
+    const ld = musicGroup({ name: 'Spindrift', genre: 'Ambient', sameAs: ['https://spindrift.bandcamp.com'] });
+    assert.equal(ld['@type'], 'MusicGroup');
+    assert.equal(ld.genre, 'Ambient');
+    assert.deepEqual(ld.sameAs, ['https://spindrift.bandcamp.com']);
+  });
+  it('nests albums and their tracks', () => {
+    const ld = musicGroup({ name: 'Spindrift', albums: [
+      { name: 'Tidal', tracks: [{ name: 'Drift', duration: 'PT4M33S' }] },
+    ] });
+    const album = ld.album[0];
+    assert.equal(album['@type'], 'MusicAlbum');
+    assert.ok(!('@context' in album));
+    assert.equal(album.track[0]['@type'], 'MusicRecording');
+    assert.equal(album.track[0].duration, 'PT4M33S');
+  });
+  it('defaults a string artist to MusicGroup, not Person', () => {
+    assert.equal(musicAlbum({ name: 'Tidal', artist: 'Spindrift' }).byArtist['@type'], 'MusicGroup');
+    assert.equal(musicRecording({ name: 'Drift', artist: 'Spindrift' }).byArtist['@type'], 'MusicGroup');
+  });
+  it('qualifies albumProductionType as a schema.org URL', () => {
+    assert.equal(musicAlbum({ name: 'X', albumProductionType: 'DJMixAlbum' }).albumProductionType,
+      'https://schema.org/DJMixAlbum');
+  });
+  it('wraps audio as an AudioObject', () => {
+    assert.equal(musicRecording({ name: 'D', audio: 'https://x.com/a.mp3' }).audio['@type'], 'AudioObject');
+  });
+});
+
+describe('event — subtypes and gigs', () => {
+  it('narrows to a subtype', () => {
+    assert.equal(event({ name: 'Gig', startDate: '2026-09-01', type: 'MusicEvent' })['@type'], 'MusicEvent');
+  });
+  it('defaults a string performer to MusicGroup', () => {
+    const ld = event({ name: 'Gig', startDate: '2026-09-01', type: 'MusicEvent', performer: 'Spindrift' });
+    assert.equal(ld.performer[0]['@type'], 'MusicGroup');
+  });
+  /* Google requires eventStatus and eventAttendanceMode as absolute schema.org
+   * URLs, not bare tokens. */
+  it('qualifies status and attendance mode as URLs', () => {
+    const ld = event({
+      name: 'Gig', startDate: '2026-09-01',
+      status: 'EventScheduled', attendanceMode: 'OfflineEventAttendanceMode',
+    });
+    assert.equal(ld.eventStatus, 'https://schema.org/EventScheduled');
+    assert.equal(ld.eventAttendanceMode, 'https://schema.org/OfflineEventAttendanceMode');
+  });
+  it('attaches ticket pricing', () => {
+    const ld = event({ name: 'Gig', startDate: '2026-09-01', price: 15, currency: 'gbp' });
+    assert.equal(ld.offers.price, '15');
+    assert.equal(ld.offers.priceCurrency, 'GBP');
+  });
+});
+
+describe('organization — subtypes', () => {
+  it('narrows to a subtype', () => {
+    assert.equal(organization({ name: 'X', url: 'https://x.com', type: 'MusicGroup' })['@type'], 'MusicGroup');
+    assert.equal(organization({ name: 'X', url: 'https://x.com', type: 'NGO' })['@type'], 'NGO');
+  });
+  it('carries contact details', () => {
+    const ld = organization({ name: 'X', url: 'https://x.com', phone: '+44 117 000 0000', email: 'a@x.com', address: '1 High St' });
+    assert.equal(ld.telephone, '+44 117 000 0000');
+    assert.equal(ld.email, 'a@x.com');
+    assert.equal(ld.address['@type'], 'PostalAddress');
   });
 });
