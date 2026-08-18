@@ -89,9 +89,10 @@ Every builder accepts an **`extra`** field (merged last) for any Schema.org prop
 
 ## Using it with `@arraypress/seo`
 
-The builders return plain objects; `seo` serialises them into the page. Nothing
-here knows about `seo`, so the same objects work in a Worker returning JSON-LD
-from an API.
+The builders return plain objects; `seo` serialises them into the page. The two
+know nothing about each other — `seo` just takes a `jsonLd` array — so you can
+build nodes anywhere: in a page's frontmatter, in a shared util, or in a build
+script that writes them out.
 
 ```astro
 ---
