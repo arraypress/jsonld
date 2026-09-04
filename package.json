@@ -12,7 +12,8 @@
     }
   },
   "files": [
-    "src"
+    "src",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "test": "node --test tests/jsonld.test.js && tsc --noEmit",
