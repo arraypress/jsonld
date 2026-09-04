@@ -10,6 +10,7 @@ import type {
   SoftwareApplication, Course, Service,
   ItemList, Menu, MenuSection, MenuItem, RealEstateListing, Apartment,
   MusicGroup, MusicAlbum, MusicRecording, Dentist, Restaurant, MusicEvent,
+  Graph,
 } from 'schema-dts';
 
 const C = 'https://schema.org' as const;
@@ -101,3 +102,38 @@ export const samples: Record<string, object> = {
     offers: { '@type': 'Offer', price: '15', priceCurrency: 'GBP', availability: 'https://schema.org/InStock' } } satisfies WithContext<MusicEvent>,
 };
 void samples;
+
+/**
+ * `buildGraph()` output, validated as a whole.
+ *
+ * This is the check that matters for the graph: schema-dts models
+ * `{'@id': '…'}` as `IdReference`, so it only type-checks here if a bare
+ * reference is genuinely legal everywhere we emit one — `isPartOf`,
+ * `publisher`, `author`, `breadcrumb`, `mainEntityOfPage`, `about`. A nested
+ * copy would always have passed; a reference only passes if the vocabulary
+ * allows it.
+ */
+export const graphSample = {
+  '@context': C,
+  '@graph': [
+    { '@type': 'WebSite', '@id': 'https://x.com#website', name: 'W', url: 'https://x.com',
+      publisher: { '@id': 'https://x.com#organization' } },
+    { '@type': 'Organization', '@id': 'https://x.com#organization', name: 'O', url: 'https://x.com' },
+    { '@type': 'Person', '@id': 'https://x.com#person', name: 'J' },
+    { '@type': 'WebPage', '@id': 'https://x.com/p#webpage', name: 'P', url: 'https://x.com/p',
+      isPartOf: { '@id': 'https://x.com#website' },
+      breadcrumb: { '@id': 'https://x.com/p#breadcrumb' },
+      about: { '@id': 'https://x.com#organization' } },
+    { '@type': 'Article', '@id': 'https://x.com/p#article', headline: 'H', url: 'https://x.com/p',
+      isPartOf: { '@id': 'https://x.com/p#webpage' },
+      mainEntityOfPage: { '@id': 'https://x.com/p#webpage' },
+      publisher: { '@id': 'https://x.com#organization' },
+      author: { '@id': 'https://x.com#person' } },
+    { '@type': 'BreadcrumbList', '@id': 'https://x.com/p#breadcrumb',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://x.com' },
+        { '@type': 'ListItem', position: 2, name: 'P' },
+      ] },
+  ],
+} satisfies Graph;
+void graphSample;

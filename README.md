@@ -38,6 +38,37 @@ All functions return a plain object with `@context: "https://schema.org"`.
 
 **Music** — `musicGroup(options)`, `musicAlbum(options)`, `musicRecording(options)`
 
+**Graph** — `buildGraph(nodes, options?)`
+
+## One graph, not a pile
+
+Emitting several builders side by side is legal, but it describes several
+*unrelated* things — nothing says the Article was published by the
+Organization, or that the WebPage belongs to the WebSite. `buildGraph()` gives
+each node a stable `@id` and wires the references between them:
+
+```js
+import { buildGraph, webSite, organization, webPage, article } from '@arraypress/jsonld';
+
+const ld = buildGraph([
+  webSite({ name: 'Acme', url: 'https://acme.com' }),
+  organization({ name: 'Acme Inc', url: 'https://acme.com' }),
+  webPage({ name: 'Hello', url: 'https://acme.com/hello' }),
+  article({ headline: 'Hello', url: 'https://acme.com/hello' }),
+]);
+// WebPage.isPartOf   -> https://acme.com#website
+// Article.publisher  -> https://acme.com#organization
+// Article.mainEntityOfPage -> https://acme.com/hello#webpage
+```
+
+Site entities (WebSite, Organization, Person) are keyed on the **origin**, so
+every page in a crawl references the same node. Everything else is keyed on the
+**page URL**. A per-page Organization is, to a crawler, a different
+Organization on every page — that split is the whole trick.
+
+Inferred links are only applied when both nodes are present, and never over a
+value you set yourself. `about` is set on the homepage only.
+
 ## Directory sites
 
 One `localBusiness()` serves every vertical: pass `type` to narrow it to any

@@ -13,6 +13,10 @@
  * `type` option covering their whole Schema.org subtype tree, so one directory
  * codebase serves dentists, restaurants, garages, venues and estate agents.
  *
+ * `buildGraph()` combines any of them into a single connected `@graph` — stable
+ * `@id`s and the usual cross-references (page → site, article → page, article →
+ * publisher), which is what Google reads as one entity rather than several.
+ *
  * Every builder returns a complete object with `@context`. Each accepts an
  * `extra` escape hatch (merged last) for any Schema.org field it doesn't model,
  * so you can declare the common 90% and bolt on the long tail.
@@ -1012,4 +1016,144 @@ export function musicRecording({ name, artist, url, duration, album, audio, isrc
   if (audio) ld.audio = { '@type': 'AudioObject', contentUrl: audio };
   if (isrc) ld.isrcCode = isrc;
   return withExtra(ld, extra);
+}
+
+// ── Graph ───────────────────────────────────
+
+/* Entities that belong to the *site*, not the page. These get an `@id` keyed on
+ * the origin so every page in a crawl points at the same node; everything else
+ * is keyed on the page URL. Getting this split wrong is what quietly turns a
+ * graph back into a pile — a per-page Organization is, to a crawler, a
+ * different Organization on every page.
+ *
+ * Exact types only. `organization({ type: 'Dentist' })` is the *subject* of a
+ * directory page, not its publisher, so subtypes stay page-scoped. */
+const SITE_SCOPED = new Set(['WebSite', 'Organization', 'Person']);
+
+/* WebPage and its subtypes — the candidates for "the page this graph is about". */
+const PAGE_TYPES = new Set([
+  'WebPage', 'CollectionPage', 'ProfilePage', 'ItemPage', 'AboutPage',
+  'ContactPage', 'SearchResultsPage', 'QAPage', 'FAQPage', 'CheckoutPage',
+]);
+
+/* Article and its subtypes — the node that hangs off the page as its content. */
+const ARTICLE_TYPES = new Set([
+  'Article', 'BlogPosting', 'NewsArticle', 'TechArticle', 'ScholarlyArticle', 'Report',
+]);
+
+/* `#breadcrumblist` reads badly and Yoast set the de-facto convention. */
+const FRAGMENTS = { BreadcrumbList: 'breadcrumb' };
+
+const typeOf = (n) => (n && typeof n === 'object' ? n['@type'] : undefined);
+
+/* A reference to another node in the graph — the whole point of the exercise.
+ * `{'@id': …}` says "the thing defined over there", where a nested copy would
+ * declare a second, unrelated entity that happens to share a name. */
+const ref = (node) => ({ '@id': node['@id'] });
+
+/* Assign only if the caller hasn't already said something. An explicit
+ * `publisher` in the source options always beats an inferred one. */
+const link = (node, prop, target) => {
+  if (node && target && node[prop] === undefined) node[prop] = ref(target);
+};
+
+const originOfUrl = (url) => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return undefined;
+  }
+};
+
+/* Drop the fragment — an `@id` of `…/page#foo#webpage` helps nobody. */
+const baseOfUrl = (url) => (typeof url === 'string' ? url.split('#')[0] : undefined);
+
+/**
+ * Combine builder output into one connected `@graph`.
+ *
+ * Each builder here returns a standalone object. Emitting several of them side
+ * by side is legal, but it describes several unrelated things: nothing says the
+ * Article was published by the Organization, or that the WebPage is part of the
+ * WebSite. This gives every node a stable `@id` and wires the usual references
+ * between them, so a crawler reads one entity graph instead of a pile.
+ *
+ * Nodes are emitted in the order given, their individual `@context` hoisted to
+ * a single one on the wrapper.
+ *
+ * Inferred links — each applied only when both nodes are present, and never
+ * over the top of a value the caller set explicitly:
+ *
+ * - `WebSite.publisher` → Organization
+ * - `WebPage.isPartOf` → WebSite
+ * - `WebPage.breadcrumb` → BreadcrumbList
+ * - `WebPage.about` → Organization, on the homepage only (page URL === site URL)
+ * - `Article.isPartOf` / `Article.mainEntityOfPage` → WebPage
+ * - `Article.publisher` → Organization
+ * - `Article.author` → Person
+ *
+ * @param {Object[]} nodes - Builder output, in the order to emit.
+ * @param {Object} [options={}] - Graph options.
+ * @param {string} [options.url] - Canonical URL of the current page. Page-scoped
+ *   `@id`s key off it. Defaults to the WebPage's (then the Article's) `url`.
+ * @param {string} [options.origin] - Site origin for site-scoped `@id`s. Defaults
+ *   to the WebSite's `url`, then the origin of `url`.
+ * @returns {Object} `{ '@context', '@graph' }` — pass straight to `jsonLd`.
+ *
+ * @example
+ * buildGraph([
+ *   webSite({ name: 'Acme', url: 'https://acme.com' }),
+ *   organization({ name: 'Acme Inc', url: 'https://acme.com' }),
+ *   webPage({ name: 'Hello', url: 'https://acme.com/hello' }),
+ *   article({ headline: 'Hello', url: 'https://acme.com/hello' }),
+ * ]);
+ * // WebPage.isPartOf → #website, Article.mainEntityOfPage → the WebPage,
+ * // Article.publisher → #organization, WebSite.publisher → #organization
+ */
+export function buildGraph(nodes = [], options = {}) {
+  const list = (Array.isArray(nodes) ? nodes : [nodes]).filter(Boolean).map((n) => ({ ...n }));
+
+  const find = (pred) => list.find((n) => pred(typeOf(n)));
+  const site = find((t) => t === 'WebSite');
+  const org = find((t) => t === 'Organization');
+  const personNode_ = find((t) => t === 'Person');
+  const crumbs = find((t) => t === 'BreadcrumbList');
+  // An exact WebPage wins over a subtype, so passing both webPage() and faq()
+  // hangs the graph off the WebPage rather than whichever came first.
+  const page = find((t) => t === 'WebPage') ?? find((t) => PAGE_TYPES.has(t));
+  const post = find((t) => ARTICLE_TYPES.has(t));
+
+  const pageUrl = baseOfUrl(options.url ?? page?.url ?? post?.url) ?? '';
+  const origin =
+    baseOfUrl(options.origin ?? site?.url) ?? originOfUrl(pageUrl) ?? pageUrl;
+
+  // Bare `#fragment` ids are legal and still connect the graph internally, so a
+  // caller with no URLs to hand gets something coherent rather than nothing.
+  const used = new Map();
+  for (const node of list) {
+    if (node['@id']) continue;
+    const t = typeOf(node);
+    if (!t) continue;
+    const base = SITE_SCOPED.has(t) ? origin : pageUrl;
+    let frag = FRAGMENTS[t] ?? t.toLowerCase();
+    const seen = (used.get(frag) ?? 0) + 1;
+    used.set(frag, seen);
+    if (seen > 1) frag += `-${seen}`;
+    node['@id'] = `${base}#${frag}`;
+  }
+
+  link(site, 'publisher', org);
+  link(page, 'isPartOf', site);
+  link(page, 'breadcrumb', crumbs);
+  // `about` says the page is *about* the organisation — true of a homepage,
+  // false of every other page, and asserting it everywhere is worse than
+  // omitting it.
+  if (page && org && pageUrl && origin && pageUrl.replace(/\/$/, '') === origin.replace(/\/$/, '')) {
+    link(page, 'about', org);
+  }
+  link(post, 'isPartOf', page);
+  link(post, 'mainEntityOfPage', page);
+  link(post, 'publisher', org);
+  link(post, 'author', personNode_);
+
+  return { '@context': CONTEXT, '@graph': list.map(stripContext) };
 }

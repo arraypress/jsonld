@@ -1,7 +1,7 @@
 {
   "name": "@arraypress/jsonld",
-  "version": "1.4.0",
-  "description": "JSON-LD structured data builders for SEO — Product, Article, BlogPosting, NewsArticle, Person, Organization, WebSite, WebPage, ProfilePage, Breadcrumb, FAQ, HowTo, Event, JobPosting, LocalBusiness, SoftwareApplication, Course, Recipe, VideoObject, ImageObject, Service, Review, AggregateRating, Offer, CollectionPage. Each with an extra passthrough.",
+  "version": "1.5.0",
+  "description": "JSON-LD structured data builders for SEO — Product, Article, BlogPosting, NewsArticle, Person, Organization, WebSite, WebPage, ProfilePage, Breadcrumb, FAQ, HowTo, Event, JobPosting, LocalBusiness, SoftwareApplication, Course, Recipe, VideoObject, ImageObject, Service, Review, AggregateRating, Offer, CollectionPage. Each with an extra passthrough, plus buildGraph() to wire them into one connected @graph.",
   "type": "module",
   "main": "src/index.js",
   "types": "src/index.d.ts",

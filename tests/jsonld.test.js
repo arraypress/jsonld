@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { product, article, blogPosting, organization, webSite, breadcrumb, faq, howTo, event, localBusiness, softwareApplication, collectionPage, person, jobPosting, newsArticle, webPage, profilePage, review, aggregateRating, offer, imageObject, videoObject, recipe, course, service, itemList, menu, menuSection, menuItem, realEstateListing, accommodation, musicGroup, musicAlbum, musicRecording } from '../src/index.js';
+import { product, article, blogPosting, organization, webSite, breadcrumb, faq, howTo, event, localBusiness, softwareApplication, collectionPage, person, jobPosting, newsArticle, webPage, profilePage, review, aggregateRating, offer, imageObject, videoObject, recipe, course, service, itemList, menu, menuSection, menuItem, realEstateListing, accommodation, musicGroup, musicAlbum, musicRecording, buildGraph, person as personLd } from '../src/index.js';
 
 describe('product', () => {
   it('builds product schema', () => {
@@ -434,5 +434,142 @@ describe('organization — subtypes', () => {
     assert.equal(ld.telephone, '+44 117 000 0000');
     assert.equal(ld.email, 'a@x.com');
     assert.equal(ld.address['@type'], 'PostalAddress');
+  });
+});
+
+describe('buildGraph', () => {
+  const nodes = () => [
+    webSite({ name: 'Acme', url: 'https://acme.com' }),
+    organization({ name: 'Acme Inc', url: 'https://acme.com' }),
+    webPage({ name: 'Hello', url: 'https://acme.com/hello' }),
+    article({ headline: 'Hello', url: 'https://acme.com/hello' }),
+    breadcrumb([{ name: 'Home', url: 'https://acme.com' }, { name: 'Hello' }]),
+  ];
+
+  it('hoists one @context and drops the per-node ones', () => {
+    const g = buildGraph(nodes());
+    assert.equal(g['@context'], 'https://schema.org');
+    assert.equal(g['@graph'].length, 5);
+    for (const n of g['@graph']) assert.equal(n['@context'], undefined);
+  });
+
+  it('keys site entities on the origin and page entities on the page URL', () => {
+    const [site, org, page] = buildGraph(nodes())['@graph'];
+    assert.equal(site['@id'], 'https://acme.com#website');
+    assert.equal(org['@id'], 'https://acme.com#organization');
+    assert.equal(page['@id'], 'https://acme.com/hello#webpage');
+  });
+
+  it('cross-references the usual relationships', () => {
+    const [site, , page, post] = buildGraph(nodes())['@graph'];
+    assert.equal(site.publisher['@id'], 'https://acme.com#organization');
+    assert.equal(page.isPartOf['@id'], 'https://acme.com#website');
+    assert.equal(page.breadcrumb['@id'], 'https://acme.com/hello#breadcrumb');
+    assert.equal(post.mainEntityOfPage['@id'], 'https://acme.com/hello#webpage');
+    assert.equal(post.isPartOf['@id'], 'https://acme.com/hello#webpage');
+    assert.equal(post.publisher['@id'], 'https://acme.com#organization');
+  });
+
+  it('links the author when a Person is in the graph', () => {
+    const g = buildGraph([
+      personLd({ name: 'Jane', url: 'https://acme.com/jane' }),
+      webPage({ name: 'Hello', url: 'https://acme.com/hello' }),
+      article({ headline: 'Hello', url: 'https://acme.com/hello' }),
+    ]);
+    const post = g['@graph'].find((n) => n['@type'] === 'Article');
+    assert.equal(post.author['@id'], 'https://acme.com#person');
+  });
+
+  it('never overwrites a value the caller set explicitly', () => {
+    const g = buildGraph([
+      organization({ name: 'Acme Inc', url: 'https://acme.com' }),
+      article({ headline: 'H', url: 'https://acme.com/h', publisher: 'Someone Else' }),
+    ]);
+    const post = g['@graph'].find((n) => n['@type'] === 'Article');
+    assert.equal(post.publisher.name, 'Someone Else');
+    assert.equal(post.publisher['@id'], undefined);
+  });
+
+  it('respects an @id the caller already assigned', () => {
+    const g = buildGraph([{ '@context': 'https://schema.org', '@type': 'WebSite', '@id': 'urn:site', name: 'X' }]);
+    assert.equal(g['@graph'][0]['@id'], 'urn:site');
+  });
+
+  it('sets about on the homepage only', () => {
+    const home = buildGraph([
+      webSite({ name: 'Acme', url: 'https://acme.com' }),
+      organization({ name: 'Acme Inc', url: 'https://acme.com' }),
+      webPage({ name: 'Home', url: 'https://acme.com' }),
+    ])['@graph'].find((n) => n['@type'] === 'WebPage');
+    assert.equal(home.about['@id'], 'https://acme.com#organization');
+
+    const inner = buildGraph(nodes())['@graph'].find((n) => n['@type'] === 'WebPage');
+    assert.equal(inner.about, undefined);
+  });
+
+  it('prefers an exact WebPage over a subtype as the page node', () => {
+    const g = buildGraph([
+      faq([{ question: 'Q', answer: 'A' }]),
+      webPage({ name: 'Help', url: 'https://acme.com/help' }),
+      webSite({ name: 'Acme', url: 'https://acme.com' }),
+    ]);
+    const page = g['@graph'].find((n) => n['@type'] === 'WebPage');
+    const faqNode = g['@graph'].find((n) => n['@type'] === 'FAQPage');
+    assert.equal(page.isPartOf['@id'], 'https://acme.com#website');
+    assert.equal(faqNode.isPartOf, undefined);
+  });
+
+  it('suffixes a repeated type rather than colliding', () => {
+    const g = buildGraph([
+      personLd({ name: 'Jane' }),
+      personLd({ name: 'John' }),
+    ], { origin: 'https://acme.com' });
+    assert.equal(g['@graph'][0]['@id'], 'https://acme.com#person');
+    assert.equal(g['@graph'][1]['@id'], 'https://acme.com#person-2');
+  });
+
+  it('falls back to bare fragments when there are no URLs at all', () => {
+    const g = buildGraph([webSite({ name: 'X' }), webPage({ name: 'Y' })]);
+    assert.equal(g['@graph'][0]['@id'], '#website');
+    assert.equal(g['@graph'][1].isPartOf['@id'], '#website');
+  });
+
+  /* validate/schema.ts type-checks a hand-written graph against schema-dts.
+   * That proves the *shape* is legal Schema.org; it does not prove the builder
+   * emits it. This asserts the real output carries exactly the @ids and
+   * references that the validated sample declares. */
+  it('emits the same references the schema-dts sample validates', () => {
+    const g = buildGraph([
+      webSite({ name: 'W', url: 'https://x.com' }),
+      organization({ name: 'O', url: 'https://x.com' }),
+      personLd({ name: 'J' }),
+      webPage({ name: 'P', url: 'https://x.com/p' }),
+      article({ headline: 'H', url: 'https://x.com/p' }),
+      breadcrumb([{ name: 'Home', url: 'https://x.com' }, { name: 'P' }]),
+    ]);
+    const byType = Object.fromEntries(g['@graph'].map((n) => [n['@type'], n]));
+    assert.deepEqual(
+      g['@graph'].map((n) => n['@id']),
+      [
+        'https://x.com#website',
+        'https://x.com#organization',
+        'https://x.com#person',
+        'https://x.com/p#webpage',
+        'https://x.com/p#article',
+        'https://x.com/p#breadcrumb',
+      ],
+    );
+    assert.deepEqual(byType.WebSite.publisher, { '@id': 'https://x.com#organization' });
+    assert.deepEqual(byType.WebPage.isPartOf, { '@id': 'https://x.com#website' });
+    assert.deepEqual(byType.WebPage.breadcrumb, { '@id': 'https://x.com/p#breadcrumb' });
+    assert.deepEqual(byType.Article.isPartOf, { '@id': 'https://x.com/p#webpage' });
+    assert.deepEqual(byType.Article.mainEntityOfPage, { '@id': 'https://x.com/p#webpage' });
+    assert.deepEqual(byType.Article.publisher, { '@id': 'https://x.com#organization' });
+    assert.deepEqual(byType.Article.author, { '@id': 'https://x.com#person' });
+  });
+
+  it('strips a fragment off the supplied url', () => {
+    const g = buildGraph([webPage({ name: 'Y', url: 'https://acme.com/y#top' })]);
+    assert.equal(g['@graph'][0]['@id'], 'https://acme.com/y#webpage');
   });
 });

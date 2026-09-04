@@ -319,3 +319,19 @@ export interface MusicGroupOptions extends Extra {
   albums?: MusicAlbumOptions[];
 }
 export function musicGroup(options: MusicGroupOptions): object;
+
+// ── Graph ──
+export interface BuildGraphOptions {
+  /** Canonical URL of the current page — page-scoped `@id`s key off it.
+   *  Defaults to the WebPage's (then the Article's) `url`. */
+  url?: string;
+  /** Site origin for site-scoped `@id`s (WebSite / Organization / Person).
+   *  Defaults to the WebSite's `url`, then the origin of `url`. */
+  origin?: string;
+}
+export interface JsonLdGraph {
+  '@context': string;
+  '@graph': object[];
+}
+/** Combine builder output into one connected `@graph` with cross-referenced `@id`s. */
+export function buildGraph(nodes: object[], options?: BuildGraphOptions): JsonLdGraph;
